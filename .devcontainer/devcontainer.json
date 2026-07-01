@@ -1,0 +1,12 @@
+{
+  "name": "Pillow Deformation Simulator",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "postCreateCommand": "pip install fastapi uvicorn python-multipart numpy scipy trimesh rtree",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": {
+      "label": "App",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
