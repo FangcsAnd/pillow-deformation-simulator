@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>枕头形变模拟器 V3.0</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; background: #1a1a2e; }
+#container { display: flex; height: 100vh; width: 100vw; }
+#viewer { flex: 1; position: relative; }
+#viewer canvas { display: block; }
+#sidebar {
+  width: 360px; background: #16213e; color: #e0e0e0;
+  display: flex; flex-direction: column; overflow-y: auto;
+  border-left: 1px solid #0f3460; padding: 16px; gap: 12px;
+}
+#sidebar h2 { font-size: 18px; color: #e94560; text-align: center; margin-bottom: 4px; }
+.section { background: #1a1a2e; border-radius: 8px; padding: 12px; border: 1px solid #0f3460; }
+.section h3 { font-size: 14px; color: #a0a0c0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.upload-area {
+  border: 2px dashed #0f3460; border-radius: 8px; padding: 24px 12px;
+  text-align: center; cursor: pointer; transition: all 0.2s;
+  color: #8080a0; font-size: 13px;
+}
+.upload-area:hover, .upload-area.dragover { border-color: #e94560; color: #e94560; background: rgba(233,69,96,0.05); }
+.upload-area input { display: none; }
+.file-info { font-size: 12px; color: #60c060; margin-top: 4px; text-align: center; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: all 0.2s;
+}
+.btn-primary { background: #e94560; color: #fff; width: 100%; }
+.btn-primary:hover { background: #c73652; }
+.btn-primary:disabled { background: #555; cursor: not-allowed; }
+.btn-secondary { background: #0f3460; color: #c0c0e0; }
+.btn-secondary:hover { background: #1a4a80; }
+.btn-small { padding: 4px 10px; font-size: 11px; border-radius: 4px; }
+.btn-danger { background: #8b2030; color: #ffcccc; }
+.btn-danger:hover { background: #a03040; }
+label { font-size: 12px; color: #a0a0c0; display: block; margin-bottom: 2px; }
+input[type="range"] { width: 100%; accent-color: #e94560; }
+input[type="number"] {
+  width: 72px; padding: 4px 6px; border: 1px solid #0f3460; border-radius: 4px;
+  background: #0a0a1e; color: #e0e0e0; font-size: 12px; text-align: center;
+}
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 60px; }
+.weight-card {
+  background: #0a0a1e; border-radius: 6px; padding: 10px; margin-bottom: 8px;
+  border-left: 3px solid #e94560;
+}
+.weight-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.weight-header span { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+.status-bar {
+  background: #0a0a1e; padding: 8px 12px; border-radius: 6px;
+  font-size: 12px; color: #8080a0; text-align: center;
+}
+.status-bar.loading { color: #e0c060; }
+.status-bar.success { color: #60c060; }
+.status-bar.error { color: #e04040; }
+.result-info { font-size: 12px; color: #60c060; padding: 8px; background: #0a2a1e; border-radius: 4px; }
+.value-display { font-size: 12px; color: #8080a0; text-align: right; min-width: 40px; }
+#loading-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); display: none; align-items: center;
+  justify-content: center; z-index: 10;
+}
+#loading-overlay.active { display: flex; }
+.spinner {
+  width: 40px; height: 40px; border: 3px solid #0f3460;
+  border-top-color: #e94560; border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.info-tip { font-size: 11px; color: #606080; line-height: 1.4; }
+.hint {
+  position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.7); color: #a0a0c0; padding: 8px 16px;
+  border-radius: 20px; font-size: 13px; pointer-events: none; z-index: 5;
+}
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="viewer">
+    <div id="loading-overlay"><div class="spinner"></div></div>
+    <div class="hint" id="hint">拖拽旋转 | 滚轮缩放 | 右键平移 | Shift+点击放重物</div>
+  </div>
+  <div id="sidebar">
+    <h2>枕头形变模拟器</h2>
+
+    <div class="section">
+      <h3>模型导入</h3>
+      <div class="upload-area" id="upload-area">
+        <div>拖拽枕头模型<br>或点击选择 .stp / .stl / .obj</div>
+        <input type="file" id="file-input" accept=".stp,.step,.stl,.obj">
+      </div>
+      <div class="file-info" id="file-info"></div>
+      <button class="btn btn-secondary" id="btn-default" style="margin-top:8px;width:100%;">使用默认枕头模型</button>
+    </div>
+
+    <div class="section">
+      <h3>导入头部/重物模型</h3>
+      <div class="upload-area" id="upload-area-weight" style="padding:14px 12px;">
+        <div>拖拽头部模型 (.stl/.obj)<br>或点击选择</div>
+        <input type="file" id="file-input-weight" accept=".stl,.obj">
+      </div>
+      <div class="file-info" id="file-info-weight"></div>
+      <div id="weights-container"></div>
+    </div>
+
+    <div class="section">
+      <h3>海绵参数 (LX-F)</h3>
+      <div class="row">
+        <label style="flex:2;">硬度 <span id="hf-val" class="value-display">15</span> HF</label>
+        <input type="range" id="hf-hardness" min="5" max="50" value="15" step="1" style="flex:3;">
+      </div>
+      <div class="row">
+        <label style="flex:2;">形变放大 <span id="def-scale-val" class="value-display">1x</span></label>
+        <input type="range" id="def-scale" min="1" max="50" value="1" step="1" style="flex:3;">
+      </div>
+      <div class="info-tip">HF 15=超软 | 40=标准 | 70=硬<br>回弹时间暂为参考值</div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-simulate" disabled>开始模拟形变</button>
+    <button class="btn btn-secondary" id="btn-reset" style="width:100%;" disabled>重置视图</button>
+    <button class="btn btn-secondary" id="btn-export" style="width:100%;margin-top:4px;" disabled>导出变形模型 (STL)</button>
+
+    <div class="status-bar" id="status">等待导入模型...</div>
+    <div id="result-section"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script>
+// ====== Upload & UI setup (runs immediately, no CDN dependency) ======
+const API_BASE = window.location.hostname ? '' : 'http://localhost:8000';
+var sessionId = null, bbox = null, originalVertsBackend = null, pillowGeometry = null;
+var weightsConfig = [], weightIdCounter = 0, weightModelVerts = null;
+
+function updateStatus(msg, type) {
+  var el = document.getElementById('status');
+  if (el) { el.textContent = msg; el.className = 'status-bar ' + (type || ''); }
+}
+function showLoading(show) {
+  var el = document.getElementById('loading-overlay');
+  if (el) el.className = show ? 'active' : '';
+}
+
+async function uploadFile(file) {
+  showLoading(true); updateStatus('处理模型...', 'loading');
+  var fd = new FormData(); fd.append('file', file);
+  try {
+    var r = await fetch(API_BASE + '/api/upload', { method: 'POST', body: fd });
+    if (!r.ok) { var txt = await r.text(); try { var e = JSON.parse(txt); throw new Error(e.detail); } catch(_) { throw new Error(txt.slice(0,200)); } }
+    var d = await r.json();
+    sessionId = d.session_id; bbox = d.bbox;
+    originalVertsBackend = d.surface_verts;
+    pillowGeometry = { verts: d.surface_verts, faces: d.surface_faces };
+    document.getElementById('file-info').textContent = '已加载: ' + d.num_vertices + ' 顶点 | ' + d.num_faces + ' 面 | ' + d.num_tetrahedra + ' 四面体';
+    document.getElementById('btn-simulate').disabled = false;
+    document.getElementById('btn-reset').disabled = false;
+    weightsConfig = []; weightIdCounter = 0;
+    document.getElementById('weights-container').innerHTML = '';
+    document.getElementById('result-section').innerHTML = '';
+    window._3d_onModel && window._3d_onModel(d);
+    if (!window._3d_onModel) updateStatus('3D 引擎加载中，请稍候...', 'loading');
+    updateStatus('加载完成: ' + d.num_vertices + ' 顶点', 'success');
+  } catch (e) { updateStatus('加载失败: ' + e.message, 'error'); }
+  finally { showLoading(false); }
+}
+
+async function loadDefaultPillow() {
+  showLoading(true); updateStatus('生成默认枕头...', 'loading');
+  try {
+    var r = await fetch(API_BASE + '/api/default-pillow', { method: 'POST' });
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail); }
+    var d = await r.json();
+    sessionId = d.session_id; bbox = d.bbox;
+    originalVertsBackend = d.surface_verts;
+    pillowGeometry = { verts: d.surface_verts, faces: d.surface_faces };
+    document.getElementById('file-info').textContent = '已加载: ' + d.num_vertices + ' 顶点 | ' + d.num_faces + ' 面';
+    document.getElementById('btn-simulate').disabled = false;
+    document.getElementById('btn-reset').disabled = false;
+    weightsConfig = []; weightIdCounter = 0;
+    document.getElementById('weights-container').innerHTML = '';
+    document.getElementById('result-section').innerHTML = '';
+    window._3d_onModel && window._3d_onModel(d);
+    updateStatus('默认模型就绪', 'success');
+  } catch (e) { updateStatus('失败: ' + e.message, 'error'); }
+  finally { showLoading(false); }
+}
+
+async function uploadWeightModel(file) {
+  showLoading(true); updateStatus('加载头部模型...', 'loading');
+  var fd = new FormData(); fd.append('file', file);
+  try {
+    var r = await fetch(API_BASE + '/api/upload-weight-model', { method: 'POST', body: fd });
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail); }
+    var d = await r.json();
+    weightModelVerts = d.vertices;
+    document.getElementById('file-info-weight').textContent = '头部模型: ' + d.num_vertices + ' 顶点';
+    console.log('Weight model loaded:', d.num_vertices, 'verts, callback exists:', !!window._3d_weightModel);
+
+    // Clear old spheres, show 3D head model
+    while (weightsConfig.length > 0) {
+      var oi = 0;
+      window._3d_removeWeight && window._3d_removeWeight(oi);
+      weightsConfig.splice(oi, 1);
+    }
+    window._3d_weightModel && window._3d_weightModel(d);
+
+    // Add model-type weight entry
+    if (bbox) {
+      var cx = (bbox.x[0]+bbox.x[1])/2, cz = bbox.z[1]-0.002;
+      weightsConfig.push({ id: ++weightIdCounter, position: [cx, (bbox.y[0]+bbox.y[1])/2, cz], mass: 5.0, shape: 'pressure', radius: 0.08, ry: 0.07, neck_ratio: 0.25, neck_shift: 0.06 });
+    }
+    renderWeightCards();
+    updateStatus('头部模型就绪', 'success');
+  } catch (e) { updateStatus('加载失败: ' + e.message, 'error'); }
+  finally { showLoading(false); }
+}
+
+function addWeight(pos) {
+  if (!bbox) return;
+  pos = pos || [(bbox.x[0]+bbox.x[1])/2, (bbox.y[0]+bbox.y[1])/2, bbox.z[1]+0.02];
+  var w = { id: ++weightIdCounter, position: pos.slice(), mass: 5.0, radius: 0.10, shape: 'sphere' };
+  weightsConfig.push(w);
+  window._3d_addWeight && window._3d_addWeight(w);
+  renderWeightCards();
+}
+function removeWeight(id) {
+  var i = weightsConfig.findIndex(function(w) { return w.id === id; });
+  if (i < 0) return;
+  weightsConfig.splice(i, 1);
+  window._3d_removeWeight && window._3d_removeWeight(i);
+  renderWeightCards();
+}
+function selectWeight(id) { window._3d_selectWeight && window._3d_selectWeight(id); }
+
+async function runSimulation() {
+  if (!sessionId) return;
+  var hf = parseInt(document.getElementById('hf-hardness').value) || 20;
+  var scale = parseInt(document.getElementById('def-scale').value) || 20;
+  var ws = weightsConfig.map(function(w) { return {
+    position: w.position.slice(), mass: parseFloat(w.mass)||5, shape: 'model',
+    radius: parseFloat(w.radius)||0.10,
+    model_verts: weightModelVerts || null,
+  };});
+  if (!ws.length) { updateStatus('请添加重物', 'error'); return; }
+
+  // Animate head falling
+  var wmm = window._weightModelMesh;
+  if (wmm && ws[0].shape === 'model') {
+    updateStatus('自由落体中...', 'loading');
+    var startY = wmm.position.y;
+    var targetY = window.bbox ? window.bbox.z[1] - 0.01 : startY - 0.05;
+    wmm.position.y = startY + 0.1;
+    var fallSteps = 15;
+    for (var s = 0; s < fallSteps; s++) {
+      await new Promise(function(r) { setTimeout(r, 30); });
+      wmm.position.y += (targetY - (startY + 0.1)) / fallSteps;
+    }
+    wmm.position.y = targetY;
+    if (ws[0] && ws[0].position) ws[0].position[2] = targetY;
+  }
+
+  showLoading(true); updateStatus('FEM 仿真中...', 'loading');
+  try {
+    var r = await fetch(API_BASE + '/api/simulate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ session_id: sessionId, hf_hardness: hf, density: 50, weights: ws, mattress_enabled: true })
+    });
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail); }
+    var d = await r.json();
+    // Trigger animation in 3D module
+    window._3d_playAnimation && window._3d_playAnimation(d.deformed_verts, d.max_displacement, d.avg_displacement, scale);
+    document.getElementById('result-section').innerHTML =
+      '<div class="result-info">HF=' + hf + '<br>最大形变: ' + (d.max_displacement*1000).toFixed(2) + 'mm<br>平均: ' + (d.avg_displacement*1000).toFixed(2) + 'mm | 显示: ' + scale + 'x</div>';
+    updateStatus('仿真完成! ' + (d.max_displacement*1000).toFixed(2) + 'mm', 'success');
+  } catch (e) { updateStatus('仿真失败: ' + e.message, 'error'); }
+  finally { showLoading(false); }
+}
+
+function resetView() {
+  document.getElementById('result-section').innerHTML = '';
+  window._3d_reset && window._3d_reset();
+  document.getElementById('btn-export').disabled = true;
+  updateStatus('视图已重置', '');
+}
+
+async function exportDeformed() {
+  if (!sessionId) return;
+  var hf = parseInt(document.getElementById('hf-hardness').value) || 20;
+  var ws = weightsConfig.map(function(w) { return {
+    position: w.position.slice(), mass: parseFloat(w.mass)||5, shape: w.shape||'sphere',
+    radius: parseFloat(w.radius)||0.10, rx: w.rx||null, ry: w.ry||null,
+    model_verts: w.shape==='model'&&weightModelVerts ? weightModelVerts : null,
+  };});
+  showLoading(true); updateStatus('导出中...', 'loading');
+  try {
+    var r = await fetch(API_BASE + '/api/export-deformed', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ session_id: sessionId, hf_hardness: hf, density: 50, weights: ws })
+    });
+    if (!r.ok) { var e = await r.json(); throw new Error(e.detail); }
+    var blob = await r.blob();
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'deformed_pillow.stl';
+    a.click(); URL.revokeObjectURL(url);
+    updateStatus('导出完成', 'success');
+  } catch (e) { updateStatus('导出失败: ' + e.message, 'error'); }
+  finally { showLoading(false); }
+}
+
+function renderWeightCards() {
+  var c = document.getElementById('weights-container'); c.innerHTML = '';
+  if (!bbox) return;
+  weightsConfig.forEach(function(w, idx) {
+    var card = document.createElement('div'); card.className = 'weight-card';
+    var label = '头部模型';
+    card.innerHTML =
+      '<div class="weight-header"><span>' + label + '</span></div>' +
+      '<div class="row"><label>X</label><input type="range" id="wx-'+w.id+'" min="'+(bbox.x[0]-0.1)+'" max="'+(bbox.x[1]+0.1)+'" value="'+w.position[0]+'" step="0.002"></div>' +
+      '<div class="row"><label>Y</label><input type="range" id="wy-'+w.id+'" min="'+(bbox.y[0]-0.1)+'" max="'+(bbox.y[1]+0.15)+'" value="'+w.position[1]+'" step="0.002"></div>' +
+      '<div class="row"><label>Z</label><input type="range" id="wz-'+w.id+'" min="0" max="'+Math.max(bbox.z[1]+0.1,0.3)+'" value="'+w.position[2]+'" step="0.002"></div>' +
+      '<div class="row"><label>质量</label><input type="number" id="wm-'+w.id+'" value="'+w.mass+'" min="0.1" max="30" step="0.1"> kg</div>';
+    c.appendChild(card);
+    ['wx','wy','wz'].forEach(function(suf, ai) {
+      var el = card.querySelector('#'+suf+'-'+w.id);
+      if (el) el.addEventListener('input', function() {
+        w.position[ai] = parseFloat(el.value);
+        var wmm = window._weightModelMesh;
+        if (wmm) {
+          if (ai === 0) wmm.position.x = w.position[0];
+          if (ai === 1) wmm.position.z = w.position[1];
+          if (ai === 2) wmm.position.y = w.position[2];
+        }
+      });
+    });
+    var me = card.querySelector('#wm-'+w.id);
+    if (me) me.addEventListener('input', function() { w.mass = parseFloat(this.value); });
+  });
+}
+
+// Bind immediately (script at end of body)
+(function() {
+  var ua = document.getElementById('upload-area'), fi = document.getElementById('file-input');
+  ua && fi && ua.addEventListener('click', function() { fi.click(); });
+  ua && ua.addEventListener('dragover', function(e) { e.preventDefault(); ua.classList.add('dragover'); });
+  ua && ua.addEventListener('dragleave', function() { ua.classList.remove('dragover'); });
+  ua && ua.addEventListener('drop', function(e) { e.preventDefault(); ua.classList.remove('dragover'); if(e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+  fi && fi.addEventListener('change', function() { if(fi.files[0]) uploadFile(fi.files[0]); });
+
+  var uw = document.getElementById('upload-area-weight'), fw = document.getElementById('file-input-weight');
+  uw && fw && uw.addEventListener('click', function() { fw.click(); });
+  uw && uw.addEventListener('dragover', function(e) { e.preventDefault(); uw.classList.add('dragover'); });
+  uw && uw.addEventListener('dragleave', function() { uw.classList.remove('dragover'); });
+  uw && uw.addEventListener('drop', function(e) { e.preventDefault(); uw.classList.remove('dragover'); if(e.dataTransfer.files[0]) uploadWeightModel(e.dataTransfer.files[0]); });
+  fw && fw.addEventListener('change', function() { if(fw.files[0]) uploadWeightModel(fw.files[0]); });
+
+  document.getElementById('btn-simulate') && document.getElementById('btn-simulate').addEventListener('click', runSimulation);
+  document.getElementById('btn-reset') && document.getElementById('btn-reset').addEventListener('click', resetView);
+  document.getElementById('btn-default') && document.getElementById('btn-default').addEventListener('click', loadDefaultPillow);
+  document.getElementById('btn-export') && document.getElementById('btn-export').addEventListener('click', exportDeformed);
+  document.getElementById('hf-hardness') && document.getElementById('hf-hardness').addEventListener('input', function() { document.getElementById('hf-val').textContent = this.value; });
+  document.getElementById('def-scale') && document.getElementById('def-scale').addEventListener('input', function() { document.getElementById('def-scale-val').textContent = this.value + 'x'; });
+  setTimeout(function() { var h = document.getElementById('hint'); h && (h.style.opacity = '0', h.style.transition = 'opacity 2s'); }, 8000);
+})();
+</script>
+
+<script type="module">
+// ====== Three.js 3D rendering only ======
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+let pillowMesh = null, wireframeOriginal = null, deformedMesh = null;
+let mattressMesh = null, weightModelMesh = null;
+let weightMeshes = [];
+let scene, camera, renderer, controls, transformControls, raycaster, mouse;
+
+function initScene() {
+  const viewer = document.getElementById('viewer');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+  scene.fog = new THREE.Fog(0x1a1a2e, 0.5, 3);
+
+  camera = new THREE.PerspectiveCamera(50, viewer.clientWidth / viewer.clientHeight, 0.001, 10000);
+  camera.position.set(0.3, 0.25, 0.35); camera.lookAt(0, 0.05, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  viewer.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.1;
+  controls.target.set(0, 0.06, 0); controls.update();
+
+  transformControls = new TransformControls(camera, renderer.domElement);
+  transformControls.setMode('translate'); transformControls.setSize(0.7);
+  transformControls.addEventListener('dragging-changed', (e) => { controls.enabled = !e.value; });
+  transformControls.addEventListener('objectChange', onWeightDragged);
+  scene.add(transformControls);
+
+  raycaster = new THREE.Raycaster(); mouse = new THREE.Vector2();
+
+  scene.add(new THREE.AmbientLight(0x404060, 2.5));
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, 8);
+  keyLight.position.set(0.4, 0.6, 0.3); keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(1024, 1024);
+  keyLight.shadow.camera.near = 0.01; keyLight.shadow.camera.far = 5;
+  keyLight.shadow.camera.left = -0.5; keyLight.shadow.camera.right = 0.5;
+  keyLight.shadow.camera.top = 0.5; keyLight.shadow.camera.bottom = -0.5;
+  scene.add(keyLight);
+
+  scene.add(new THREE.DirectionalLight(0x8899cc, 3)).position.set(-0.2, 0.1, -0.2);
+  scene.add(new THREE.DirectionalLight(0xe94560, 1.5)).position.set(0, 0.05, 0.4);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.8, metalness: 0.2 })
+  );
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.005;
+  ground.receiveShadow = true; scene.add(ground);
+
+  const grid = new THREE.GridHelper(1, 20, 0x333355, 0x222240);
+  grid.position.y = -0.004; scene.add(grid);
+
+  window.addEventListener('resize', onResize);
+  viewer.addEventListener('click', onViewerClick);
+}
+
+function onResize() {
+  const viewer = document.getElementById('viewer');
+  camera.aspect = viewer.clientWidth / viewer.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+}
+
+function createPillowGeom(vertsBackend) {
+  const positions = [];
+  for (const v of vertsBackend) positions.push(v[0], v[2], v[1]);
+  return new THREE.Float32BufferAttribute(positions, 3);
+}
+
+function createPillowMesh(vertsBackend, faces) {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', createPillowGeom(vertsBackend));
+  geom.setIndex(faces.flat());
+  geom.computeVertexNormals();
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({
+    color: 0x8899cc, roughness: 0.55, metalness: 0.05,
+    side: THREE.DoubleSide, transparent: true, opacity: 0.80, flatShading: false,
+  }));
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
+}
+
+function createWireframeMesh(vertsBackend, faces) {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', createPillowGeom(vertsBackend));
+  geom.setIndex(faces.flat());
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, wireframe: true, transparent: true,
+    opacity: 0.25, depthTest: true, depthWrite: false,
+  });
+  return new THREE.Mesh(geom, mat);
+}
+
+function createDisplacementColorMesh(originalBackend, deformedBackend, faces, scale = 1.0) {
+  const positions = [], colors = [], diffs = [];
+  for (let i = 0; i < deformedBackend.length; i++) {
+    const dx = (deformedBackend[i][0] - originalBackend[i][0]) * scale;
+    const dy = (deformedBackend[i][1] - originalBackend[i][1]) * scale;
+    const dz = (deformedBackend[i][2] - originalBackend[i][2]) * scale;
+    diffs.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
+    positions.push(originalBackend[i][0] + dx, originalBackend[i][2] + dz, originalBackend[i][1] + dy);
+  }
+  const maxD = Math.max(...diffs, 0.001);
+  for (const d of diffs) {
+    const t = Math.min(d / maxD, 1.0);
+    const color = new THREE.Color();
+    color.setHSL((1 - t) * 0.65, 0.9, 0.35 + t * 0.3);
+    colors.push(color.r, color.g, color.b);
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geom.setIndex(faces.flat()); geom.computeVertexNormals();
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.6, metalness: 0.05,
+    side: THREE.DoubleSide, transparent: true, opacity: 0.88, flatShading: false,
+  }));
+  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.visible = false;
+  return mesh;
+}
+
+function createWeightMesh(idx, positionBackend, radius, mass) {
+  const pos3 = new THREE.Vector3(positionBackend[0], positionBackend[2], positionBackend[1]);
+  const hue = (idx * 0.15) % 1.0;
+  const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
+  const mat = new THREE.MeshPhongMaterial({
+    color, specular: 0x444444, shininess: 60, transparent: true, opacity: 0.45, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 24), mat);
+  mesh.position.copy(pos3);
+  mesh.userData = { id: idx, mass, radius, backendPos: positionBackend.slice() };
+  return mesh;
+}
+
+// ---- Module-only 3D functions end, callbacks begin ----
+
+// onViewerClick uses global addWeight
+function onViewerClick(event) {
+  var b = window.bbox;
+  if (!pillowMesh || transformControls.dragging || !event.shiftKey || !b) return;
+  var vw = document.getElementById('viewer'), rect = vw.getBoundingClientRect();
+  mouse.x = ((event.clientX-rect.left)/rect.width)*2-1;
+  mouse.y = -((event.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+  var hits = raycaster.intersectObject(pillowMesh);
+  if (hits.length > 0) {
+    var pt = hits[0].point, bp = [pt.x, pt.z, Math.max(pt.y, b.z[1]-0.005)];
+    if (typeof addWeight === 'function') addWeight(bp);
+  }
+}
+
+function onWeightDragged() {
+  if (!transformControls.object) return;
+  var obj = transformControls.object, p = obj.position, bp = [p.x, p.z, p.y];
+  obj.userData.backendPos = bp;
+  var wc = window.weightsConfig;
+  if (!wc) return;
+  for (var i=0; i<wc.length; i++) {
+    if (wc[i].id === obj.userData.id) { wc[i].position = bp; break; }
+  }
+  if (typeof updateWeightSliders === 'function') {
+    for (var j=0; j<wc.length; j++) { if (wc[j].id === obj.userData.id) { updateWeightSliders(j); break; } }
+  }
+}
+
+// Window callbacks from UI layer
+window._3d_onModel = function(data) {
+  weightMeshes.forEach(function(m) { scene.remove(m); }); weightMeshes = [];
+  if (pillowMesh) scene.remove(pillowMesh);
+  if (wireframeOriginal) scene.remove(wireframeOriginal);
+  if (deformedMesh) scene.remove(deformedMesh);
+
+  var g = new THREE.BufferGeometry();
+  var p = []; data.surface_verts.forEach(function(v) { p.push(v[0],v[2],v[1]); });
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  g.setIndex(data.surface_faces.flat()); g.computeVertexNormals();
+  pillowMesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    color:0x8899cc, roughness:0.55, metalness:0.05, side:THREE.DoubleSide, transparent:true, opacity:0.80, flatShading:false
+  }));
+  pillowMesh.castShadow = pillowMesh.receiveShadow = true; scene.add(pillowMesh);
+
+  var wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(p.slice(), 3));
+  wg.setIndex(data.surface_faces.flat());
+  wireframeOriginal = new THREE.Mesh(wg, new THREE.MeshBasicMaterial({
+    color:0xffffff, wireframe:true, transparent:true, opacity:0.25, depthTest:true, depthWrite:false
+  }));
+  scene.add(wireframeOriginal);
+
+  deformedMesh = createDisplacementColorMesh(data.surface_verts, data.surface_verts, data.surface_faces, 1);
+  deformedMesh.visible = false; scene.add(deformedMesh);
+
+  if (mattressMesh) scene.remove(mattressMesh);
+  var b = data.bbox, mw = b.x[1]-b.x[0], md = b.y[1]-b.y[0];
+  var mGeo = new THREE.BoxGeometry(mw*1.05, 0.01, md*1.05);
+  mattressMesh = new THREE.Mesh(mGeo, new THREE.MeshStandardMaterial({color:0x334455, roughness:0.7, metalness:0.1}));
+  mattressMesh.position.set(0, -0.005, 0); mattressMesh.receiveShadow = true; scene.add(mattressMesh);
+
+  controls.target.set(0, b.z[1]/2, 0);
+  camera.position.set((b.x[1]-b.x[0])*1.5, b.z[1]*0.8, (b.y[1]-b.y[0])*1.5+0.1);
+  controls.update();
+};
+
+window._3d_addWeight = function(w) {
+  var hue = ((w.id%20)*0.15)%1, cl = new THREE.Color().setHSL(hue, 0.7, 0.5);
+  var m = new THREE.Mesh(new THREE.SphereGeometry(w.radius, 32, 24),
+    new THREE.MeshPhongMaterial({color:cl, specular:0x444444, shininess:60, transparent:true, opacity:0.45, depthWrite:false}));
+  m.position.set(w.position[0], w.position[2], w.position[1]);
+  m.userData = {id:w.id, mass:w.mass, radius:w.radius, pos:w.position.slice()};
+  weightMeshes.push(m); scene.add(m);
+};
+
+window._3d_removeWeight = function(idx) {
+  var m = weightMeshes.splice(idx,1)[0]; scene.remove(m);
+  if (transformControls.object === m) transformControls.detach();
+};
+
+window._3d_selectWeight = function(id) {
+  var m = weightMeshes.find(function(x){return x.userData.id===id;});
+  if (m) transformControls.attach(m);
+};
+
+window._3d_moveWeight = function(idx, pos) {
+  var m = weightMeshes[idx];
+  if (m) { m.position.set(pos[0], pos[2], pos[1]); m.userData.pos = pos.slice(); }
+};
+
+window._3d_resizeWeight = function(idx, r) {
+  var om = weightMeshes[idx]; if (!om) return;
+  var hue = ((om.userData.id%20)*0.15)%1, cl = new THREE.Color().setHSL(hue,0.7,0.5);
+  var m = new THREE.Mesh(new THREE.SphereGeometry(r,32,24),
+    new THREE.MeshPhongMaterial({color:cl, specular:0x444444, shininess:60, transparent:true, opacity:0.45, depthWrite:false}));
+  m.position.copy(om.position); m.userData = om.userData; m.userData.radius = r;
+  scene.remove(om); weightMeshes[idx] = m; scene.add(m);
+  if (transformControls.object === om) transformControls.attach(m);
+};
+
+window._3d_simDone = function(defVerts, maxD, avgD, scale) {
+  if (deformedMesh) scene.remove(deformedMesh);
+  deformedMesh = createDisplacementColorMesh(window.originalVertsBackend, defVerts, window.pillowGeometry.faces, scale);
+  deformedMesh.visible = true; scene.add(deformedMesh);
+  if (pillowMesh) pillowMesh.material.opacity = 0.10;
+  if (wireframeOriginal) wireframeOriginal.material.opacity = 0.35;
+
+  // Show ONLY deformed mesh, hide original
+  if (pillowMesh) pillowMesh.visible = false;
+  if (wireframeOriginal) wireframeOriginal.visible = false;
+
+  // Position head exactly on deformed surface (anti-clip)
+  var wmm = weightModelMesh;
+  if (wmm && window.bbox && window.originalVertsBackend) {
+    var origVerts = window.originalVertsBackend;
+    var hx = (window.bbox.x[0] + window.bbox.x[1]) / 2;
+    var hy = (window.bbox.y[0] + window.bbox.y[1]) / 2;
+    var maxZ = 0;
+    for (var i = 0; i < defVerts.length; i++) {
+      var dx = origVerts[i][0] - hx;
+      var dy = origVerts[i][1] - hy;
+      if (Math.sqrt(dx*dx + dy*dy) < 0.06) {
+        if (defVerts[i][2] > maxZ) maxZ = defVerts[i][2];
+      }
+    }
+    wmm.position.y = maxZ > 0 ? maxZ : (window.bbox.z[1] - 0.002);
+    if (window.weightsConfig && window.weightsConfig.length > 0) {
+      window.weightsConfig[0].position[2] = wmm.position.y;
+    }
+  }
+
+  document.getElementById('btn-export').disabled = false;
+};
+
+window._3d_reset = function() {
+  if (deformedMesh) deformedMesh.visible = false;
+  if (pillowMesh) pillowMesh.visible = true;
+  if (wireframeOriginal) wireframeOriginal.visible = true;
+  if (weightModelMesh && window.bbox) {
+    var b = window.bbox;
+    weightModelMesh.position.set((b.x[0]+b.x[1])/2, b.z[1]-0.002, (b.y[0]+b.y[1])/2);
+  }
+};
+
+window._3d_weightModel = function(d) {
+  try {
+    if (weightModelMesh) scene.remove(weightModelMesh);
+    var verts = d.vertices;
+    var b = window.bbox;
+    if (!b) return;
+
+    var xs = [], zs = [], ys_3d = [];
+    for (var i = 0; i < verts.length; i++) {
+      xs.push(verts[i][0]);
+      zs.push(verts[i][2]);
+      ys_3d.push(verts[i][2]);
+    }
+    var xmin = xs[0], xmax = xs[0], zmin = zs[0], zmax = zs[0], ymin = ys_3d[0];
+    for (var i = 1; i < verts.length; i++) {
+      if (xs[i] < xmin) xmin = xs[i]; if (xs[i] > xmax) xmax = xs[i];
+      if (zs[i] < zmin) zmin = zs[i]; if (zs[i] > zmax) zmax = zs[i];
+      if (ys_3d[i] < ymin) ymin = ys_3d[i];
+    }
+    var cx = (xmin + xmax) / 2;
+    var cz = (zmin + zmax) / 2;
+
+    var geom = new THREE.BufferGeometry();
+    var pos = [];
+    for (var i = 0; i < verts.length; i++) {
+      var v = verts[i];
+      pos.push(v[0]-cx, v[2]-ymin, v[1]-cz);
+    }
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    var idx = [];
+    for (var j = 0; j < d.faces.length; j++) {
+      idx.push(d.faces[j][0], d.faces[j][1], d.faces[j][2]);
+    }
+    geom.setIndex(idx); geom.computeVertexNormals();
+
+  weightModelMesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({
+    color: 0xe0a080, roughness: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.7
+  }));
+  weightModelMesh.castShadow = true;
+  window._weightModelMesh = weightModelMesh;
+
+    weightModelMesh.position.set(
+      (b.x[0] + b.x[1]) / 2,
+      b.z[1],
+      (b.y[0] + b.y[1]) / 2
+    );
+    scene.add(weightModelMesh);
+  } catch(e) { console.error('_3d_weightModel error:', e); }
+};
+
+window._3d_playAnimation = function(defV, maxD, avgD, scale) {
+  var origV = window.originalVertsBackend;
+  var faces = window.pillowGeometry && window.pillowGeometry.faces;
+  var bbox = window.bbox;
+  var wmm = weightModelMesh;
+  
+  console.log('Animation start: origV=' + !!origV + ' faces=' + !!faces + ' bbox=' + !!bbox + ' wmm=' + !!wmm);
+  
+  if (!origV || !faces || !bbox) {
+    // Fallback: just show final result
+    if (deformedMesh) scene.remove(deformedMesh);
+    deformedMesh = createDisplacementColorMesh(origV || [], defV, faces || [], scale);
+    deformedMesh.visible = true; scene.add(deformedMesh);
+    if (pillowMesh) pillowMesh.visible = false;
+    if (wireframeOriginal) wireframeOriginal.visible = false;
+    return;
+  }
+
+  if (pillowMesh) pillowMesh.visible = false;
+  if (wireframeOriginal) wireframeOriginal.visible = false;
+
+  var duration = 2000;
+  var startTime = Date.now();
+
+  function animStep() {
+    var t = Math.min((Date.now() - startTime) / duration, 1.0);
+    var lerpVerts = [];
+    for (var i = 0; i < defV.length; i++) {
+      lerpVerts.push([
+        origV[i][0] + (defV[i][0] - origV[i][0]) * t,
+        origV[i][1] + (defV[i][1] - origV[i][1]) * t,
+        origV[i][2] + (defV[i][2] - origV[i][2]) * t,
+      ]);
+    }
+
+    if (deformedMesh) scene.remove(deformedMesh);
+    deformedMesh = createDisplacementColorMesh(origV, lerpVerts, faces, scale);
+    deformedMesh.visible = true;
+    scene.add(deformedMesh);
+
+    if (wmm && bbox) {
+      var hx = (bbox.x[0] + bbox.x[1]) / 2;
+      var hy = (bbox.y[0] + bbox.y[1]) / 2;
+      var maxZ = 0;
+      for (var j = 0; j < lerpVerts.length; j++) {
+        var dx = origV[j][0] - hx;
+        var dy = origV[j][1] - hy;
+        if (Math.sqrt(dx*dx + dy*dy) < 0.08) {
+          var vz = origV[j][2] + (lerpVerts[j][2] - origV[j][2]) * scale;
+          if (vz > maxZ) maxZ = vz;
+        }
+      }
+      if (maxZ > 0) {
+        wmm.position.y = maxZ;
+        console.log('Head Y set to:', maxZ);
+      }
+    }
+
+    if (t < 1.0) {
+      requestAnimationFrame(animStep);
+    }
+  }
+  animStep();
+};
+
+window._3d_moveModel = function(bp) {
+  if (weightModelMesh) {
+    weightModelMesh.position.set(bp[0], bp[2], bp[1]);
+  }
+};
+
+initScene();
+function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+animate();
+</script>
+</body>
+</html>
